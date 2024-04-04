@@ -6,7 +6,7 @@ class Embedding(nn.Module):
     def __init__(self, input_dim, model_dim, max_len=5000, dropout=0.1):
         super(Embedding, self).__init__()
 
-        # positional embedding (shape (1, seq_len, model_dim))
+        # positional embedding
         self.PositionalEmbedding(model_dim, max_len)
 
         # value embedding
@@ -26,6 +26,7 @@ class Embedding(nn.Module):
         pe[:, 0::2] = torch.sin(positions / denominators)
         # cos(pos/10000^(2i/model_dim))
         pe[:, 1::2] = torch.cos(positions / denominators)
+        # pe shape (1, seq_len, model_dim)
         self.position_embedding = pe.unsqueeze(0)
 
     def forward(self, x):
