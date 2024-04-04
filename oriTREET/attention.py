@@ -3,7 +3,23 @@ from math import sqrt
 import numpy as np
 import torch
 import torch.nn as nn
-from utils.masking import DoubleTriangularCausalMask
+
+
+class DoubleTriangularCausalMask:
+    def __init__(self, B, L, device="cpu", diagonal=1, history=0):
+        mask_shape = [B, 1, L, L]
+        with torch.no_grad():
+            mask_causal = torch.triu(
+                torch.ones(mask_shape, dtype=torch.bool), diagonal=diagonal
+            )
+            mask_lower = torch.triu(
+                torch.ones(mask_shape, dtype=torch.bool), diagonal=history + 1
+            ).permute(0, 1, 3, 2)
+            self._mask = torch.bitwise_xor(mask_causal, mask_lower).to(device)
+
+    @property
+    def mask(self):
+        return self._mask
 
 
 class FullFixedTimeCausalConstructiveAttention(nn.Module):
@@ -127,6 +143,9 @@ class AttentionLayer(nn.Module):
         queries = self.query_projection(queries).view(B, L, H, -1)
         keys = self.key_projection(keys).view(B, S, H, -1)
         values = self.value_projection(values).view(B, S, H, -1)
+        # queries = queries.view(B, L, H, -1)
+        # keys = keys.view(B, S, H, -1)
+        # values = values.view(B, S, H, -1)
 
         out, attn = self.inner_attention(
             queries, keys, values, attn_mask, drawn_y=drawn_y
@@ -134,4 +153,5 @@ class AttentionLayer(nn.Module):
         # out = out.view(B, L, -1)
         out = out.view(B, out.size(1), -1)
 
-        return self.out_projection(out), attn
+        return self.out_projection(out)
+        # return out
