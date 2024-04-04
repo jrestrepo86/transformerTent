@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 
@@ -17,20 +18,22 @@ def get_mask(N, key_len, query_len, history_len):
 
 
 class FixedPastCausalAttention(nn.Module):
-    def __init__(self, model_dim, heads, history_len, mask):
+    def __init__(self, model_dim, heads, history_len, mask, attn_dropout=0.1):
         super(FixedPastCausalAttention, self).__init__()
         self.model_dim = model_dim
         self.heads = heads
         self.history_len = history_len
         self.mask = mask
         self.head_dim = model_dim // heads
-        self.scale = model_dim ** (1 / 2)
+        self.scale = self.head_dim ** (1 / 2)
 
         assert self.head_dim * heads == model_dim, "Model dim needs to be div by heads"
 
         self.values_proj = nn.Linear(self.head_dim, self.head_dim, bias=False)
         self.keys_proj = nn.Linear(self.head_dim, self.head_dim, bias=False)
         self.query_proj = nn.Linear(self.head_dim, self.head_dim, bias=False)
+
+        self.dropout = nn.Dropout(attn_dropout)
 
         self.fc_out = nn.Linear(model_dim, model_dim)
 
@@ -48,11 +51,11 @@ class FixedPastCausalAttention(nn.Module):
         # energy
         energy = torch.einsum("nqhd,nkhd->nhqk", [query, keys])
         # masking
-        energy = energy.masked_fill(self.mask, float(-1e20))
+        energy = energy.masked_fill(self.mask, -np.inf)
         # scores
-        scores = torch.softmax(energy / self.scale, dim=-1)
+        scores = self.dropout(torch.softmax(energy / self.scale, dim=-1))
         # attention shape (N, query_len, heads, heads_dim)
-        attention = torch.einsum("nhql,nlhd->nlhd", [scores, values])
+        attention = torch.einsum("nhql,nlhd->nqhd", [scores, values])
         return attention
 
     def mfpca_attention(self, values, keys, query):
@@ -69,16 +72,16 @@ class FixedPastCausalAttention(nn.Module):
         samp_energy = torch.einsum("nlhd,nlhd->nhl", [query, keys])
         energy.diagonal(offset=0, dim1=2, dim2=3).copy_(samp_energy)
         # masking
-        energy = energy.masked_fill(self.mask, float(-1e20))
+        energy = energy.masked_fill(self.mask, -np.inf)
         # scores
-        scores = torch.softmax(energy / self.scale, dim=-1)
+        scores = self.dropout(torch.softmax(energy / self.scale, dim=-1))
         scores_diag = torch.diag_embed(
             scores.diagonal(offset=0, dim1=2, dim2=3), offset=0, dim1=2, dim2=3
         )
         torch.diagonal(scores, offset=0, dim1=2, dim2=3).zero_()
         # attention
-        origin_attention = torch.einsum("nhql,nlhd->nlhd", [scores, origin_values])
-        samp_attention = torch.einsum("nhql,nlhd->nlhd", [scores_diag, values])
+        origin_attention = torch.einsum("nhql,nlhd->nqhd", [scores, origin_values])
+        samp_attention = torch.einsum("nhql,nlhd->nqhd", [scores_diag, values])
         return samp_attention + origin_attention
 
     def forward(self, values, keys, query, ref_sample=False):
