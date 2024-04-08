@@ -41,7 +41,7 @@ class FixedPastCausalAttention(nn.Module):
         self.origin_keys = []
         self.origin_query = []
 
-    def fpca_attention(self, values, keys, query):
+    def fpca_attention(self, values, keys, query, mask):
         """
         full past causal attention energy
         Inputs shape (N, query/keys_len, heads, heads_dim)
@@ -51,14 +51,14 @@ class FixedPastCausalAttention(nn.Module):
         # energy
         energy = torch.einsum("nqhd,nkhd->nhqk", [query, keys])
         # masking
-        energy = energy.masked_fill(self.mask, -np.inf)
+        energy = energy.masked_fill(mask, -np.inf)
         # scores
         scores = self.dropout(torch.softmax(energy / self.scale, dim=-1))
         # attention shape (N, query_len, heads, heads_dim)
         attention = torch.einsum("nhql,nlhd->nqhd", [scores, values])
         return attention
 
-    def mfpca_attention(self, values, keys, query):
+    def mfpca_attention(self, values, keys, query, mask):
         """
         modified full past causal attention energy
         Inputs shape (N, query/keys_len, heads, heads_dim)
@@ -72,7 +72,7 @@ class FixedPastCausalAttention(nn.Module):
         samp_energy = torch.einsum("nlhd,nlhd->nhl", [query, keys])
         energy.diagonal(offset=0, dim1=2, dim2=3).copy_(samp_energy)
         # masking
-        energy = energy.masked_fill(self.mask, -np.inf)
+        energy = energy.masked_fill(mask, -np.inf)
         # scores
         scores = self.dropout(torch.softmax(energy / self.scale, dim=-1))
         scores_diag = torch.diag_embed(
@@ -84,7 +84,7 @@ class FixedPastCausalAttention(nn.Module):
         samp_attention = torch.einsum("nhql,nlhd->nqhd", [scores_diag, values])
         return samp_attention + origin_attention
 
-    def forward(self, values, keys, query, ref_sample=False):
+    def forward(self, values, keys, query, mask, ref_sample=False):
         """
         input shape (N, query_len, model_dim)(samples, sequence lenght, model dimension)
         """
@@ -103,12 +103,12 @@ class FixedPastCausalAttention(nn.Module):
 
         # get attention
         if ref_sample:
-            attention = self.mfpca_attention(values, keys, query)
+            attention = self.mfpca_attention(values, keys, query, mask)
         else:
             self.origin_values = values
             self.origin_keys = keys
             self.origin_query = query
-            attention = self.fpca_attention(values, keys, query)
+            attention = self.fpca_attention(values, keys, query, mask)
 
         # concat heads, out shape (N, query_len, model_dim)
         out = attention.reshape(N, query_len, self.model_dim)
