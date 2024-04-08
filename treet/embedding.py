@@ -3,7 +3,7 @@ import torch.nn as nn
 
 
 class Embedding(nn.Module):
-    def __init__(self, input_dim, model_dim, max_len=5000, dropout=0.1):
+    def __init__(self, input_dim, model_dim, max_len=5000, embd_dropout=0.1):
         super(Embedding, self).__init__()
 
         # positional embedding
@@ -11,7 +11,7 @@ class Embedding(nn.Module):
 
         # value embedding
         self.value_embedding = nn.Linear(input_dim, model_dim, bias=False)
-        self.dropout = nn.Dropout(p=dropout)
+        self.dropout = nn.Dropout(p=embd_dropout)
 
     def PositionalEmbedding(self, model_dim, max_len, n=10000.0):
         assert (
@@ -36,12 +36,3 @@ class Embedding(nn.Module):
         """
         x = self.value_embedding(x) + self.position_embedding[:, : x.size(1)]
         return self.dropout(x)
-
-
-if __name__ == "__main__":
-
-    x = torch.zeros(2, 10, 3)
-    pos_embds = Embedding(3, 6)
-    y = pos_embds(x)
-    torch.set_printoptions(precision=2)
-    print(y)

@@ -18,14 +18,13 @@ def test_attention():
     """
     Test if own implementation of attention mechanism is equal to the one in TREET
     """
-    torch.manual_seed(seed)
-    N = 2
-    model_dim = 4
-    query_len = 3
+    N = 4
+    model_dim = 6
+    query_len = 6
     values = torch.rand(N, query_len, model_dim).detach()
     keys = torch.rand(N, query_len, model_dim).detach()
     query = torch.rand(N, query_len, model_dim).detach()
-    parameters = {"heads": 2, "history_len": 1, "dropout": 0.0}
+    parameters = {"heads": 3, "history_len": 1, "dropout": 0.1}
 
     N, _, model_dim = values.shape
     mask = get_mask(
