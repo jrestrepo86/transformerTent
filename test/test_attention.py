@@ -1,44 +1,58 @@
 import os
 import sys
-
+import pytest
+import functools
 import torch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from oriTREET.attention import AttentionLayer, FullFixedTimeCausalConstructiveAttention
 from treet.attention import FixedPastCausalAttention as fpca
 from treet.attention import get_mask
 
+seed = 42
+assert_equal = functools.partial(torch.testing.assert_close, rtol=1e-5, atol=1e-5)
 
-def test():
+
+def test_attention():
+    """
+    Test if own implementation of attention mechanism is equal to the one in TREET
+    """
+    torch.manual_seed(seed)
     N = 2
-    model_dim = 6
+    model_dim = 4
     query_len = 3
-    values_a = torch.arange(model_dim, dtype=torch.float).expand(
-        [N, query_len, model_dim]
+    values = torch.rand(N, query_len, model_dim).detach()
+    keys = torch.rand(N, query_len, model_dim).detach()
+    query = torch.rand(N, query_len, model_dim).detach()
+    parameters = {"heads": 2, "history_len": 1, "dropout": 0.0}
+
+    N, _, model_dim = values.shape
+    mask = get_mask(
+        N, keys.shape[1], query.shape[1], history_len=parameters["history_len"]
     )
-    keys_a = torch.arange(N * model_dim * query_len, dtype=torch.float).reshape(
-        N, query_len, model_dim
-    )
-    query_a = torch.ones_like(keys_a)
-
-    values_b = torch.arange(start=10, end=16, dtype=torch.float).expand(
-        [N, query_len, model_dim]
-    )
-    keys_b = 2.0 * torch.ones_like(keys_a)
-    query_b = torch.arange(start=10, end=10 + model_dim, dtype=torch.float).expand(
-        [N, query_len, model_dim]
+    torch.manual_seed(seed)
+    attention = fpca(
+        model_dim=model_dim,
+        history_len=parameters["history_len"],
+        heads=parameters["heads"],
+        attn_dropout=parameters["dropout"],
     )
 
-    mask = get_mask(N, keys_a.shape[1], query_a.shape[1], history_len=1)
+    at = attention(values, keys, query, mask)
+    bt = attention(values, keys, query, mask, ref_sample=True)
 
-    parameters = {"model_dim": 6, "heads": 2, "history_len": 1, "mask": mask}
-    attention = fpca(**parameters)
+    # TREET
+    FPCA = FullFixedTimeCausalConstructiveAttention(
+        mask_flag=True,
+        history_len=parameters["history_len"],
+        attention_dropout=parameters["dropout"],
+    )
+    torch.manual_seed(seed)
+    attention = AttentionLayer(FPCA, model_dim, parameters["heads"])
 
-    a = attention(values_a, keys_a, query_a)
-    b = attention(values_b, keys_b, query_b, ref_sample=True)
-    print(a)
-    print(b)
+    aT = attention(query, keys, values, attn_mask=None, drawn_y=False)
+    bT = attention(query, keys, values, attn_mask=None, drawn_y=True)
 
-
-if __name__ == "__main__":
-    test()
+    assert_equal(at, aT)
+    assert_equal(bt, bT)

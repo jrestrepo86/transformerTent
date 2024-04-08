@@ -129,9 +129,14 @@ class AttentionLayer(nn.Module):
         d_values = d_values or (d_model // n_heads)
 
         self.inner_attention = attention
-        self.query_projection = nn.Linear(d_model, d_keys * n_heads)
-        self.key_projection = nn.Linear(d_model, d_keys * n_heads)
-        self.value_projection = nn.Linear(d_model, d_values * n_heads)
+        # self.query_projection = nn.Linear(d_model, d_keys * n_heads)
+        # self.key_projection = nn.Linear(d_model, d_keys * n_heads)
+        # self.value_projection = nn.Linear(d_model, d_values * n_heads)
+
+        self.values_proj = nn.Linear(d_values, d_values, bias=False)
+        self.keys_proj = nn.Linear(d_values, d_values, bias=False)
+        self.query_proj = nn.Linear(d_values, d_values, bias=False)
+
         self.out_projection = nn.Linear(d_values * n_heads, d_model)
         self.n_heads = n_heads
 
@@ -140,9 +145,19 @@ class AttentionLayer(nn.Module):
         _, S, _ = keys.shape
         H = self.n_heads
 
-        queries = self.query_projection(queries).view(B, L, H, -1)
-        keys = self.key_projection(keys).view(B, S, H, -1)
-        values = self.value_projection(values).view(B, S, H, -1)
+        # Split model_dim into heads
+        values = values.reshape(B, L, H, -1)
+        keys = keys.reshape(B, S, H, -1)
+        queries = queries.reshape(B, L, H, -1)
+
+        # Calculate projections
+        values = self.values_proj(values)
+        keys = self.keys_proj(keys)
+        queries = self.query_proj(queries)
+
+        # queries = self.query_projection(queries).view(B, L, H, -1)
+        # keys = self.key_projection(keys).view(B, S, H, -1)
+        # values = self.value_projection(values).view(B, S, H, -1)
         # queries = queries.view(B, L, H, -1)
         # keys = keys.view(B, S, H, -1)
         # values = values.view(B, S, H, -1)
@@ -154,4 +169,3 @@ class AttentionLayer(nn.Module):
         out = out.view(B, out.size(1), -1)
 
         return self.out_projection(out)
-        # return out

@@ -18,12 +18,11 @@ def get_mask(N, key_len, query_len, history_len):
 
 
 class FixedPastCausalAttention(nn.Module):
-    def __init__(self, model_dim, heads, history_len, mask, attn_dropout=0.1):
+    def __init__(self, model_dim, heads, history_len, attn_dropout=0.1):
         super(FixedPastCausalAttention, self).__init__()
         self.model_dim = model_dim
         self.heads = heads
         self.history_len = history_len
-        self.mask = mask
         self.head_dim = model_dim // heads
         self.scale = self.head_dim ** (1 / 2)
 
@@ -33,9 +32,9 @@ class FixedPastCausalAttention(nn.Module):
         self.keys_proj = nn.Linear(self.head_dim, self.head_dim, bias=False)
         self.query_proj = nn.Linear(self.head_dim, self.head_dim, bias=False)
 
-        self.dropout = nn.Dropout(attn_dropout)
-
         self.fc_out = nn.Linear(model_dim, model_dim)
+
+        self.dropout = nn.Dropout(attn_dropout)
 
         self.origin_values = []
         self.origin_keys = []
