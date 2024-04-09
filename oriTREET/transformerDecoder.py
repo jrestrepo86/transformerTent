@@ -43,13 +43,9 @@ class DecoderLayer(nn.Module):
             x = norm_layer(x)
 
         y = torch.cat([input, x], dim=-1)
-
         y = self.dropout(self.activation(self.conv1(y.transpose(-1, 1))))
         if hasattr(self, "convs"):
             for conv in self.convs:
                 y = self.dropout(self.activation(conv(y)))
         y = self.dropout(self.conv2(y).transpose(-1, 1))
-        # return self.norms[-1](y)
-        return new_x
-
-    # return self.norms[-1](y), attn
+        return self.norms[-1](y)

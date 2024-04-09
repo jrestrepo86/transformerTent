@@ -16,9 +16,10 @@ assert_equal = functools.partial(torch.testing.assert_close, rtol=1e-5, atol=1e-
 
 
 def init_model_weights(model):
-    for name, p in model.named_parameters():
-        nn.init.ones_(p)
+    for name, w in model.named_parameters():
         # print(name)
+        torch.manual_seed(seed)
+        nn.init.normal_(w)
 
 
 def test_attention():

@@ -79,8 +79,7 @@ class TransformerBlock(nn.Module):
         y = self.conv2(y).transpose(-1, 1)
         # norm 2
         out = self.norm2(y)
-        # return out
-        return attn
+        return out
 
 
 class Decoder(nn.Module):

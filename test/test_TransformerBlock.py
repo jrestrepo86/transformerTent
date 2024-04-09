@@ -18,9 +18,10 @@ assert_equal = functools.partial(torch.testing.assert_close, rtol=1e-5, atol=1e-
 
 
 def init_model_weights(model):
-    for name, p in model.named_parameters():
-        nn.init.ones_(p)
+    for name, w in model.named_parameters():
         # print(name)
+        torch.manual_seed(seed)
+        nn.init.normal_(w)
 
 
 def test_TrasnformerBlock():
@@ -33,12 +34,14 @@ def test_TrasnformerBlock():
     parameters = {
         "heads": 3,
         "history_len": 1,
-        "attn_dropout": 0.1,
+        "attn_dropout": 0.0,
         "activation": "relu",
-        "trans_dropout": 0.1,
+        "trans_dropout": 0.0,
         "fordward_expansion": 4,
     }
     N, _, model_dim = x.shape
+
+    print("treet model")
     mask = get_mask(N, seq_len, seq_len, history_len=parameters["history_len"])
     transformer_block = TransformerBlock(model_dim, **parameters)
     init_model_weights(transformer_block)
@@ -48,7 +51,7 @@ def test_TrasnformerBlock():
     b = transformer_block(x, mask, ref_sample=True)
 
     # TREET
-    print("TREET")
+    print("TREET model")
     FPCA = FullFixedTimeCausalConstructiveAttention(
         mask_flag=True,
         history_len=parameters["history_len"],
@@ -73,7 +76,3 @@ def test_TrasnformerBlock():
 
     assert_equal(a, aT)
     assert_equal(b, bT)
-
-
-if __name__ == "__main__":
-    test_TrasnformerBlock()
