@@ -1,8 +1,37 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from attention import FixedPastCausalAttention
-from embedding import Embedding
+from .attention import FixedPastCausalAttention
+from .embedding import Embedding
+
+
+def get_activation_fn(afn):
+    activation_functions = {
+        "linear": lambda: lambda x: x,
+        "relu": nn.ReLU,
+        "relu6": nn.ReLU6,
+        "elu": nn.ELU,
+        "prelu": nn.PReLU,
+        "leaky_relu": nn.LeakyReLU,
+        "threshold": nn.Threshold,
+        "hardtanh": nn.Hardtanh,
+        "sigmoid": nn.Sigmoid,
+        "tanh": nn.Tanh,
+        "log_sigmoid": nn.LogSigmoid,
+        "softplus": nn.Softplus,
+        "softshrink": nn.Softshrink,
+        "softsign": nn.Softsign,
+        "tanhshrink": nn.Tanhshrink,
+        "softmax": nn.Softmax,
+        "gelu": nn.GELU,
+    }
+
+    if afn not in activation_functions:
+        raise ValueError(
+            f"'{afn}' is not included in activation_functions. Use below one \n {activation_functions.keys()}"
+        )
+
+    return activation_functions[afn]
 
 
 class TransformerBlock(nn.Module):
@@ -13,7 +42,7 @@ class TransformerBlock(nn.Module):
         history_len,
         attn_dropout=0.1,
         activation="relu",
-        dropout=0.1,
+        trans_dropout=0.1,
         fordward_expansion=4,
     ):
         super(TransformerBlock, self).__init__()
@@ -22,27 +51,36 @@ class TransformerBlock(nn.Module):
             model_dim, heads, history_len, attn_dropout
         )
 
+        self.dropout = nn.Dropout(trans_dropout)
+
+        # feed_fordward
+        self.conv1 = nn.Sequential(
+            nn.Conv1d(2 * model_dim, fordward_expansion * model_dim, kernel_size=1),
+            get_activation_fn(activation)(),
+            self.dropout,
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv1d(fordward_expansion * model_dim, model_dim, kernel_size=1),
+            self.dropout,
+        )
+        # Layer norms
         self.norm1 = nn.LayerNorm(model_dim)
         self.norm2 = nn.LayerNorm(model_dim)
-        self.feed_fordward = nn.Sequential(
-            nn.Conv1d(2 * model_dim, fordward_expansion * model_dim, kernel_size=1),
-            getattr(F, activation),
-            nn.Conv1d(fordward_expansion * model_dim, model_dim, kernel_size=1),
-        )
-        self.dropout = nn.Dropout(dropout)
 
-    def fordward(self, x, mask, ref_sample):
+    def forward(self, x, mask, ref_sample):
         input = x
-        att = self.attention(x, x, x, mask, ref_sample)
+        attn = self.attention(x, x, x, mask, ref_sample)
         # add and norm 1
-        x = self.norm1(self.dropout(att) + input)
+        x = self.norm1(self.dropout(attn) + input)
         # concat
         y = torch.cat([input, x], dim=-1)
         # feed fordward
-        fordward = self.feed_fordward(y.transpose(-1, 1))
+        y = self.conv1(y.transpose(-1, 1))
+        y = self.conv2(y).transpose(-1, 1)
         # norm 2
-        out = self.norm2(self.dropout(fordward.transpose(-1, 1)))
-        return out
+        out = self.norm2(y)
+        # return out
+        return attn
 
 
 class Decoder(nn.Module):
