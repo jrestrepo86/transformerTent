@@ -2,8 +2,8 @@ import math
 
 import torch
 import torch.nn as nn
-from transformerDecoder import Decoder
 
+from transformerDecoder import Decoder
 from treet.attention import get_mask
 
 
@@ -13,15 +13,17 @@ class treetBlock(nn.Module):
         input_dim,
         model_dim,
         heads,
-        history_len,
+        history_len=1,
+        prediction_len=1,
         attn_dropout=0.1,
         embed_max_len=5000,
         embed_dropout=0.1,
         transf_activation="relu",
         transf_dropout=0.1,
-        trans_fordward_expansion=4,
+        transf_fordward_expansion=4,
     ):
         super(treetBlock, self).__init__()
+        self.prediction_len = prediction_len
         self.decoder = Decoder(
             input_dim,
             model_dim,
@@ -32,11 +34,10 @@ class treetBlock(nn.Module):
             embed_dropout,
             transf_activation,
             transf_dropout,
-            trans_fordward_expansion,
+            transf_fordward_expansion,
         )
 
     def fordward(self, y, y_min_max, mask, x=None):
-
         y = torch.cat((y, x), dim=-1) if x is not None else y
         deco_out = self.decoder(y, mask, ref_sample=False)
         # random sample
@@ -44,7 +45,10 @@ class treetBlock(nn.Module):
         y_sampled = torch.cat((y_sampled, x), dim=-1) if x is not None else y_sampled
         sampled_deco_out = self.decoder(y_sampled, mask, ref_sample=True)
 
-        return deco_out, sampled_deco_out
+        return (
+            deco_out[:, -self.prediction_len :, :],
+            sampled_deco_out[:, -self.prediction_len :, :],
+        )
 
 
 class treetModel(nn.Module):
@@ -109,7 +113,7 @@ class treetModel(nn.Module):
             trans_fordward_expansion,
         ).to(self.device)
 
-    def model_loss(self, out, samp_out):
+    def model_DV_loss(self, out, samp_out):
         """
         DV loss
         """
@@ -129,11 +133,4 @@ class treetModel(nn.Module):
         val_size=0.2,
         verbose=False,
     ):
-
-        # optimizers
-        # opt_model_y = torch.optim.Adam(self.model_y.parameters(), lr=lr)
-        # opt_model_yx = torch.optim.Adam(self.model_yx.parameters(), lr=lr)
-
-        mask = get_mask(
-            batch_size,
-        )
+        pass
