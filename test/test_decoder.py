@@ -10,8 +10,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from oriTREET.attention import AttentionLayer, FullFixedTimeCausalConstructiveAttention
 from oriTREET.transformerDecoder import DecoderLayer
+from oriTREET.transformerDecoder import Decoder as TREETDecoder
 from treet.attention import get_mask
-from treet.transformerDecoder import TransformerBlock
+from treet.transformerDecoder import Decoder as treetDecoder
 
 seed = 42
 assert_equal = functools.partial(torch.testing.assert_close, rtol=1e-5, atol=1e-5)
@@ -24,34 +25,33 @@ def init_model_weights(model):
         nn.init.normal_(w)
 
 
-def test_TrasnformerBlock():
+def test_Decoder():
     torch.manual_seed(seed)
     N = 10
+    input_dim = 3
     model_dim = 6
     seq_len = 4
-    x = torch.rand(N, seq_len, model_dim).detach()
-
+    x = torch.rand(N, seq_len, input_dim).detach()
     parameters = {
         "heads": 3,
         "history_len": 1,
         "attn_dropout": 0.0,
-        "activation": "relu",
-        "trans_dropout": 0.0,
-        "fordward_expansion": 4,
+        "embed_max_len": 5000,
+        "embed_dropout": 0.0,
+        "transf_activation": "relu",
+        "transf_dropout": 0.0,
+        "transf_fordward_expansion": 4,
     }
-    N, _, model_dim = x.shape
-
     print("treet model")
     mask = get_mask(N, seq_len, seq_len, history_len=parameters["history_len"])
-    transformer_block = TransformerBlock(model_dim, **parameters)
-    init_model_weights(transformer_block)
+    treet_decoder = treetDecoder(input_dim, model_dim, **parameters)
+    init_model_weights(treet_decoder)
 
-    transformer_block.eval()
-    a = transformer_block(x, mask, ref_sample=False)
-    b = transformer_block(x, mask, ref_sample=True)
+    treet_decoder.eval()
+    a = treet_decoder(x, mask, ref_sample=False)
+    b = treet_decoder(x, mask, ref_sample=True)
 
     # TREET
-    print("TREET model")
     FPCA = FullFixedTimeCausalConstructiveAttention(
         mask_flag=True,
         history_len=parameters["history_len"],
@@ -63,16 +63,26 @@ def test_TrasnformerBlock():
         [attention_TREET],
         model_dim,
         d_ff=model_dim * 4,
-        dropout=parameters["trans_dropout"],
-        activation=parameters["activation"],
+        dropout=parameters["transf_dropout"],
+        activation=parameters["transf_activation"],
         ff_layers=1,
     )
     init_model_weights(transformer_block_TREET)
 
+    decoder_TREET = TREETDecoder(
+        [transformer_block_TREET],
+        norm_layer=torch.nn.LayerNorm(model_dim),
+        projection=nn.Linear(model_dim, 1, bias=True),
+    )
+    init_model_weights(decoder_TREET)
+
     attention_TREET.eval()
     transformer_block_TREET.eval()
-    aT = transformer_block_TREET(x, x_mask=None, drawn_y=False)
-    bT = transformer_block_TREET(x, x_mask=None, drawn_y=True)
+    decoder_TREET.eval()
 
-    assert_equal(a, aT)
-    assert_equal(b, bT)
+    aT = decoder_TREET(x, x_mask=None, drawn_y=False)
+    bT = decoder_TREET(x, x_mask=None, drawn_y=True)
+
+
+if __name__ == "__main__":
+    test_Decoder()

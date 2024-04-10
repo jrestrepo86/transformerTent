@@ -49,3 +49,26 @@ class DecoderLayer(nn.Module):
                 y = self.dropout(self.activation(conv(y)))
         y = self.dropout(self.conv2(y).transpose(-1, 1))
         return self.norms[-1](y)
+
+
+class Decoder(nn.Module):
+    def __init__(self, layers, norm_layer=None, projection=None):
+        super(Decoder, self).__init__()
+        self.layers = nn.ModuleList(layers)
+        self.norm = norm_layer
+        self.projection = projection
+
+    def forward(self, x, x_mask=None, drawn_y=False):
+        attns = []
+        for layer in self.layers:
+            # x, attn = layer(x, x_mask=x_mask, drawn_y=drawn_y)
+            # attns.append(attn)
+            x = layer(x, x_mask=x_mask, drawn_y=drawn_y)
+
+        if self.norm is not None:
+            x = self.norm(x)
+
+        if self.projection is not None:
+            x = self.projection(x)
+        # return x, attns
+        return x

@@ -41,9 +41,9 @@ class TransformerBlock(nn.Module):
         heads,
         history_len,
         attn_dropout=0.1,
-        activation="relu",
-        trans_dropout=0.1,
-        fordward_expansion=4,
+        transf_activation="relu",
+        transf_dropout=0.1,
+        transf_fordward_expansion=4,
     ):
         super(TransformerBlock, self).__init__()
         # attention
@@ -51,16 +51,18 @@ class TransformerBlock(nn.Module):
             model_dim, heads, history_len, attn_dropout
         )
 
-        self.dropout = nn.Dropout(trans_dropout)
+        self.dropout = nn.Dropout(transf_dropout)
 
         # feed_fordward
         self.conv1 = nn.Sequential(
-            nn.Conv1d(2 * model_dim, fordward_expansion * model_dim, kernel_size=1),
-            get_activation_fn(activation)(),
+            nn.Conv1d(
+                2 * model_dim, transf_fordward_expansion * model_dim, kernel_size=1
+            ),
+            get_activation_fn(transf_activation)(),
             self.dropout,
         )
         self.conv2 = nn.Sequential(
-            nn.Conv1d(fordward_expansion * model_dim, model_dim, kernel_size=1),
+            nn.Conv1d(transf_fordward_expansion * model_dim, model_dim, kernel_size=1),
             self.dropout,
         )
         # Layer norms
@@ -94,7 +96,7 @@ class Decoder(nn.Module):
         embed_dropout=0.1,
         transf_activation="relu",
         transf_dropout=0.1,
-        trans_fordward_expansion=4,
+        transf_fordward_expansion=4,
     ):
         super(Decoder, self).__init__()
 
@@ -106,13 +108,15 @@ class Decoder(nn.Module):
             attn_dropout,
             transf_activation,
             transf_dropout,
-            trans_fordward_expansion,
+            transf_fordward_expansion,
         )
-        self.norm = nn.LayerNorm(self.model_dim)
-        self.dense = nn.Linear(model_dim, 1)
+        self.norm = nn.LayerNorm(model_dim)  # esto es raro
+        # Dense layer
+        self.projection = nn.Linear(model_dim, 1)
 
-    def fordward(self, x, mask, ref_sample):
+    def forward(self, x, mask, ref_sample):
         y = self.embedding(x)
-        y = self.norm(self.transformerBlock(x, mask, ref_sample))
-        out = self.dense(y)
+        y = self.norm(self.transformerBlock(y, mask, ref_sample))
+        # Dense layer
+        out = self.projection(y)
         return out
