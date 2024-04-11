@@ -37,8 +37,8 @@ class DataProvider(Dataset):
             target = (target - target.mean()) / target.std()
             source = (source - source.mean()) / source.std()
 
-        self.target = torch.tensor(toColVector(target))
-        self.source = torch.tensor(toColVector(source))
+        self.target = torch.tensor(toColVector(target), dtype=torch.float64)
+        self.source = torch.tensor(toColVector(source), dtype=torch.float64)
 
     def __len__(self):
         return self.data_len
@@ -46,13 +46,14 @@ class DataProvider(Dataset):
     def __getitem__(self, index):
         sequence_end = index + self.prediction_len + self.history_len
 
-        target = self.target[index:sequence_end]
-        source = self.source[index:sequence_end]
+        target = self.target[index:sequence_end].clone()
+        source = self.source[index:sequence_end].clone()
 
         if self.last_x_zero:
             source[-1].zero_()
         if self.source_history_len is not None:
-            source[: -self.source_history_len].zero_()
+            if self.source_history_len < self.history_len:
+                source[: -self.source_history_len].zero_()
         return target, source
 
 

@@ -30,7 +30,8 @@ class Dataset_Apnea(Dataset):
         self.x_type = process_info["x"]
         self.x_length = process_info["x_length"]
         self.last_x_zero = True  # zeroing the last x input when returning a batch
-        self.scale = True
+        # self.scale = True
+        self.scale = False
         self.__read_data__()
 
     def __read_data__(self):
