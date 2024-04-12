@@ -3,8 +3,9 @@ import math
 import torch
 import torch.nn as nn
 
-from transformerDecoder import Decoder
-from treet.attention import get_mask
+from .transformerDecoder import Decoder
+
+# from treet.attention import get_mask
 
 
 class treetBlock(nn.Module):
@@ -21,9 +22,11 @@ class treetBlock(nn.Module):
         transf_activation="relu",
         transf_dropout=0.1,
         transf_fordward_expansion=4,
+        treet_block_randsamp_draws=15,
     ):
         super(treetBlock, self).__init__()
         self.prediction_len = prediction_len
+        self.treet_block_randsamp_draws = treet_block_randsamp_draws
         self.decoder = Decoder(
             input_dim,
             model_dim,
@@ -37,17 +40,24 @@ class treetBlock(nn.Module):
             transf_fordward_expansion,
         )
 
-    def fordward(self, y, y_min_max, mask, x=None):
+    def forward(self, y, y_min_max, mask, x=None):
         y = torch.cat((y, x), dim=-1) if x is not None else y
         deco_out = self.decoder(y, mask, ref_sample=False)
-        # random sample
-        y_sampled = torch.FloatTensor(y.size).uniform_(*y_min_max).to(y.device)
-        y_sampled = torch.cat((y_sampled, x), dim=-1) if x is not None else y_sampled
-        sampled_deco_out = self.decoder(y_sampled, mask, ref_sample=True)
+
+        # random samples
+        temp_array = []
+        for _ in range(self.treet_block_randsamp_draws):
+            y_sampled = torch.FloatTensor(y.size()).uniform_(*y_min_max).to(y.device)
+            y_sampled = (
+                torch.cat((y_sampled, x), dim=-1) if x is not None else y_sampled
+            )
+            sampled_deco_out = self.decoder(y_sampled, mask, ref_sample=True)
+            temp_array.append(sampled_deco_out)
+        sampled_deco_out = torch.stack(temp_array)
 
         return (
             deco_out[:, -self.prediction_len :, :],
-            sampled_deco_out[:, -self.prediction_len :, :],
+            sampled_deco_out[..., -self.prediction_len :, :],
         )
 
 

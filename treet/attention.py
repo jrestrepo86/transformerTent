@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 
 
-def get_mask(N, key_len, query_len, history_len):
+def get_mask(batch_size, key_len, query_len, history_len):
     """
     Compute the Toeplitz-like band matrix mask
     """
@@ -14,7 +14,7 @@ def get_mask(N, key_len, query_len, history_len):
             diagonal=-(history_len + 1),
         )
         mask = torch.logical_not(torch.bitwise_xor(m1, m2))
-        mask = mask.expand(N, 1, query_len, key_len)
+        mask = mask.expand(batch_size, 1, query_len, key_len)
     return mask
 
 

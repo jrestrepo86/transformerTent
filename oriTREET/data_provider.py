@@ -164,28 +164,3 @@ def data_provider(args, flag):
     )
 
     return data_set, data_loader
-
-
-if __name__ == "__main__":
-    args = {
-        "model": "Decoder_Model",
-        "embed": "Fixed",
-        "batch_size": 3,
-        "seq_len": 0,
-        "label_len": 1,
-        "pred_len": 5,
-        "process_info": {
-            "type": "Apnea",
-            "x": "breath",  # TE(heart->breath) < TE(breath->heart)
-            "x_length": 3,  # -1 means all = label length (the last x is trimmed due to synchronization of the processes)
-            "memory_cut": True,  # reset states of the model, and taking data without stride
-        },
-        "num_workers": 0,
-        "y_dim": 1,
-    }
-    flag = "train"
-    data_set, data_loader = data_provider(args, flag)
-
-    for i, (batch_x, batch_y) in enumerate(data_loader):
-        pass
-        print(i)
