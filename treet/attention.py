@@ -65,8 +65,8 @@ class FixedPastCausalAttention(nn.Module):
         energy shape (N, heads, query_len, keys_len)
         attention shape (N, query_len, heads, heads_dim)
         """
-        origin_keys = self.origin_keys.clone()
-        origin_values = self.origin_values.clone()
+        origin_keys = self.origin_keys.clone().detach().requires_grad_(True)
+        origin_values = self.origin_values.clone().detach().requires_grad_(True)
         # energy
         energy = torch.einsum("nqhd,nkhd->nhqk", [query, origin_keys])
         samp_energy = torch.einsum("nlhd,nlhd->nhl", [query, keys])

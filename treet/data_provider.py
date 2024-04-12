@@ -38,8 +38,8 @@ class treet_data_set(Dataset):
             target = (target - target.mean()) / target.std()
             source = (source - source.mean()) / source.std()
 
-        self.target = torch.tensor(toColVector(target), dtype=torch.float64)
-        self.source = torch.tensor(toColVector(source), dtype=torch.float64)
+        self.target = target.clone().detach()
+        self.source = source.clone().detach()
 
     def __len__(self):
         return self.data_len
@@ -47,8 +47,10 @@ class treet_data_set(Dataset):
     def __getitem__(self, index):
         sequence_end = index + self.prediction_len + self.history_len
 
-        target = self.target[index:sequence_end].clone()
-        source = self.source[index:sequence_end].clone()
+        # target = self.target[index:sequence_end].clone().detach()
+        # source = self.source[index:sequence_end].clone().detach()
+        target = self.target[index:sequence_end].clone().detach()
+        source = self.source[index:sequence_end].clone().detach()
 
         if self.last_x_zero:
             source[-1].zero_()

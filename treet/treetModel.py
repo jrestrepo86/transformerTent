@@ -1,13 +1,14 @@
 import math
 
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
-
-from .transformerDecoder import Decoder
-from .attention import get_mask
-from .data_provider import treet_data_set
 from torch.utils.data import DataLoader, Subset
+from tqdm import tqdm
+
+from .attention import get_mask
+from .data_provider import toColVector, treet_data_set
+from .transformerDecoder import Decoder
 
 
 class treetBlock(nn.Module):
@@ -43,8 +44,8 @@ class treetBlock(nn.Module):
         )
 
     def forward(self, y, y_min_max, mask, x=None):
-        y = torch.cat((y, x), dim=-1) if x is not None else y
-        deco_out = self.decoder(y, mask, ref_sample=False)
+        yt = torch.cat((y, x), dim=-1) if x is not None else y
+        deco_out = self.decoder(yt, mask, ref_sample=False)
 
         # random samples
         temp_array = []
@@ -66,8 +67,8 @@ class treetBlock(nn.Module):
 class treetModel(nn.Module):
     def __init__(
         self,
-        y_dim,
-        x_dim,
+        target_signal,
+        source_signal,
         model_dim=6,
         heads=3,
         history_len=1,
@@ -89,9 +90,20 @@ class treetModel(nn.Module):
             self.device = device
         torch.device(self.device)
 
+        self.prediction_len = prediction_len
+        self.history_len = history_len
+        self.target = torch.tensor(toColVector(target_signal), dtype=torch.float).to(
+            self.device
+        )
+        self.source = torch.tensor(toColVector(source_signal), dtype=torch.float).to(
+            self.device
+        )
+        self.target_dim = target_signal.shape[1]
+        self.source_dim = source_signal.shape[1]
+
         # y-model
         self.model_y = treetBlock(
-            input_dim=y_dim,
+            input_dim=self.target_dim,
             model_dim=model_dim,
             heads=heads,
             history_len=history_len,
@@ -107,7 +119,7 @@ class treetModel(nn.Module):
 
         # yx-model
         self.model_yx = treetBlock(
-            input_dim=y_dim + x_dim,
+            input_dim=self.target_dim + self.source_dim,
             model_dim=model_dim,
             heads=heads,
             history_len=history_len,
@@ -134,15 +146,17 @@ class treetModel(nn.Module):
         DV loss
         """
         t_mean = torch.mean(out)
-        t_log_mean_exp = torch.logsumexp(samp_out, 0) - math.log(samp_out.shape[0])
+        t_log_mean_exp = torch.log(torch.sum(torch.exp(samp_out))) - math.log(
+            samp_out.shape[0] * samp_out.shape[1]
+        )
         loss = t_mean - t_log_mean_exp
         return -loss
 
-    def data_provider(self, target, source):
+    def data_provider(self):
 
         train_dataset = treet_data_set(
-            target,
-            source,
+            self.target,
+            self.source,
             prediction_len=self.prediction_len,
             history_len=self.history_len,
             normalize=self.normalize_dataset,
@@ -150,8 +164,8 @@ class treetModel(nn.Module):
             last_x_zero=self.calc_tent,
         )
         val_dataset = treet_data_set(
-            target,
-            source,
+            self.target,
+            self.source,
             prediction_len=self.prediction_len,
             history_len=self.history_len,
             normalize=self.normalize_dataset,
@@ -161,8 +175,8 @@ class treetModel(nn.Module):
         self.test_dataset = []
         if self.test_set:
             self.test_dataset = treet_data_set(
-                target,
-                source,
+                self.target,
+                self.source,
                 prediction_len=self.prediction_len,
                 history_len=self.history_len,
                 normalize=self.normalize_dataset,
@@ -182,8 +196,6 @@ class treetModel(nn.Module):
 
     def fit(
         self,
-        target_signal,
-        source_signal,
         batch_size=64,
         max_epochs=2000,
         lr=1e-6,
@@ -212,44 +224,56 @@ class treetModel(nn.Module):
         )
 
         # data data_provider
-        self.data_provider(target_signal, source_signal)
+        self.data_provider()
         y_min_max = torch.Tensor(
             [
-                min(target_signal.min(), source_signal.min()),
-                max(target_signal.max(), source_signal.max()),
+                min(self.target.min(), self.source.min()),
+                max(self.target.max(), self.source.max()),
             ]
         )
 
         # set full fixed attention mask
         sequence_len = self.prediction_len + self.history_len
-        mask = get_mask(batch_size, sequence_len, sequence_len, self.history_len)
 
         # trainin
         val_loss_epoch = []
-        for _ in range(max_epochs):
+        tent_epoch = []
+        for _ in tqdm(range(max_epochs), disable=not verbose):
             self.model_state("train")
-            for i, (target_b, source_b) in enumerate(self.train_loader):
-                y, samp_y = self.model_y(target_b, y_min_max, mask, x=None)
-                yx, samp_yx = self.model_y(target_b, y_min_max, mask, x=source_b)
-                loss_y = self.model_DV_loss(y, samp_y)
-                loss_yx = self.model_DV_loss(yx, samp_yx)
-                loss = loss_y + loss_yx
-                loss.backward()
-                opt_y.step()
-                opt_yx.step()
+            with torch.set_grad_enabled(True):
+                for _, (target_b, source_b) in enumerate(self.train_loader):
+                    mask = get_mask(
+                        target_b.shape[0], sequence_len, sequence_len, self.history_len
+                    ).to(self.device)
+                    opt_y.zero_grad()
+                    opt_yx.zero_grad()
+                    y, samp_y = self.model_y(target_b, y_min_max, mask, x=None)
+                    yx, samp_yx = self.model_yx(target_b, y_min_max, mask, x=source_b)
+                    loss_y = self.model_DV_loss(y, samp_y)
+                    loss_yx = self.model_DV_loss(yx, samp_yx)
+                    loss = loss_y + loss_yx
+                    loss.backward()
+                    opt_y.step()
+                    opt_yx.step()
 
             # validation
             self.model_state("eval")
             with torch.no_grad():
-                for i, (target_b, source_b) in enumerate(self.val_loader):
+                for _, (target_b, source_b) in enumerate(self.val_loader):
+                    mask = get_mask(
+                        target_b.shape[0], sequence_len, sequence_len, self.history_len
+                    ).to(self.device)
                     y, samp_y = self.model_y(target_b, y_min_max, mask, x=None)
-                    yx, samp_yx = self.model_y(target_b, y_min_max, mask, x=source_b)
+                    yx, samp_yx = self.model_yx(target_b, y_min_max, mask, x=source_b)
                     loss_y = self.model_DV_loss(y, samp_y)
                     loss_yx = self.model_DV_loss(yx, samp_yx)
-                    loss = loss_y + loss_yx
-                    val_loss_epoch.append(loss.mean().item())
+                    loss = (loss_y + loss_yx).mean()
+                    tent = (loss_yx - loss_y).mean()
+                    val_loss_epoch.append(loss.item())
+                    tent_epoch.append(tent.item())
 
         self.val_loss_epoch = np.array(val_loss_epoch)
+        self.tent_epoch = np.array(tent_epoch)
 
     def get_curves(self):
-        return self.val_loss_epoch
+        return self.val_loss_epoch, self.tent_epoch

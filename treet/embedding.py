@@ -34,5 +34,7 @@ class Embedding(nn.Module):
         x shape (samples, seq_len, input dim)
         output shape (samples, seq_len, model dim)
         """
-        x = self.value_embedding(x) + self.position_embedding[:, : x.size(1)]
+        x = self.value_embedding(x) + self.position_embedding[:, : x.size(1)].to(
+            x.get_device()
+        )
         return self.dropout(x)
