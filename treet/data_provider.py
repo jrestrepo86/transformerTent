@@ -1,8 +1,9 @@
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, Subset
 import os
 import numpy as np
 import pandas as pd
 import torch
+import copy
 
 
 def toColVector(x):
@@ -16,18 +17,18 @@ def toColVector(x):
     return x
 
 
-class DataProvider(Dataset):
+class treet_data_set(Dataset):
     def __init__(
         self,
         target,
         source,
-        prediction_len=10,
+        prediction_len=8,
         history_len=1,
         normalize=None,
         source_history_len=None,
         last_x_zero=True,
     ):
-        super(DataProvider, self).__init__()
+        super(treet_data_set, self).__init__()
         self.prediction_len = prediction_len
         self.history_len = history_len
         self.last_x_zero = last_x_zero
@@ -77,21 +78,3 @@ def get_apnea_data(target_name, source_name):
     target = np.array(df[target_name].values)
     source = np.array(df[source_name].values)
     return target, source
-
-
-if __name__ == "__main__":
-    target, source = get_apnea_data("heart", "breath")
-
-    data_set = DataProvider(
-        target=target,
-        source=source,
-        prediction_len=10,
-        history_len=1,
-        normalize=None,
-        source_history_len=None,
-        last_x_zero=True,
-    )
-    data_loader = DataLoader(data_set, batch_size=32)
-    for i, (target, source) in enumerate(data_loader):
-        pass
-        print(i)
