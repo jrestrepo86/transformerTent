@@ -235,7 +235,7 @@ class treetModel(nn.Module):
         # set full fixed attention mask
         sequence_len = self.prediction_len + self.history_len
 
-        # trainin
+        # training
         val_loss_epoch = []
         tent_epoch = []
         for _ in tqdm(range(max_epochs), disable=not verbose):

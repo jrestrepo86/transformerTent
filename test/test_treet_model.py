@@ -46,8 +46,10 @@ def test_treet_model():
     history_len = 1
     prediction_len = 9
     batch_size = 128
-    target = np.random.normal(0, 1, (N, 1))
     source = np.random.normal(0, 1, (N, 1))
+    target = np.zeros_like(source)
+    for i in range(1, source.shape[0]):
+        target[i] = source[i - 1] + 0.01 * np.random.normal(0, 1)
 
     model_params = {
         "target_signal": target,
@@ -68,7 +70,7 @@ def test_treet_model():
     train_params = {
         "batch_size": batch_size,
         "max_epochs": 150,
-        "lr": 1e-5,
+        "lr": 1e-3,
         "weight_decay": 5e-5,
         "val_size": 0.2,
         "test_set": False,
