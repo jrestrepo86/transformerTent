@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 
 from .attention import get_mask
-from .data_provider import toColVector, treet_data_set
+from .data_provider import data_provider, toColVector, treet_data_set
 from .transformerDecoder import Decoder
 
 
@@ -152,68 +152,32 @@ class treetModel(nn.Module):
         loss = t_mean - t_log_mean_exp
         return -loss
 
-    def data_provider(self):
-
-        train_dataset = treet_data_set(
-            self.target,
-            self.source,
-            prediction_len=self.prediction_len,
-            history_len=self.history_len,
-            normalize=self.normalize_dataset,
-            source_history_len=self.source_history,
-            last_x_zero=self.calc_tent,
-        )
-        val_dataset = treet_data_set(
-            self.target,
-            self.source,
-            prediction_len=self.prediction_len,
-            history_len=self.history_len,
-            normalize=self.normalize_dataset,
-            source_history_len=self.source_history,
-            last_x_zero=self.calc_tent,
-        )
-        self.test_dataset = []
-        if self.test_set:
-            self.test_dataset = treet_data_set(
-                self.target,
-                self.source,
-                prediction_len=self.prediction_len,
-                history_len=self.history_len,
-                normalize=self.normalize_dataset,
-                source_history_len=self.source_history,
-                last_x_zero=self.calc_tent,
-            )
-
-        # split in train val
-        n = train_dataset.data_len
-        val_size = int(n * self.val_size)
-        inds = torch.randperm(n, dtype=torch.int)
-        (val_idx, train_idx) = (inds[:val_size], inds[val_size:])
-        train_dataset = Subset(train_dataset, train_idx)
-        val_dataset = Subset(val_dataset, val_idx)
-        self.train_loader = DataLoader(train_dataset, batch_size=self.batch_size)
-        self.val_loader = DataLoader(val_dataset, batch_size=self.batch_size)
-
     def fit(
         self,
         batch_size=64,
         max_epochs=2000,
         lr=1e-6,
         weight_decay=5e-5,
+        train_size=0.8,
         val_size=0.2,
-        test_set=False,
         normalize_dataset=None,
         calc_tent=True,
-        source_history=None,
+        source_history_len=None,
         verbose=False,
     ):
 
-        self.batch_size = batch_size
-        self.val_size = val_size
-        self.test_set = test_set
-        self.normalize_dataset = normalize_dataset
-        self.calc_tent = calc_tent
-        self.source_history = source_history
+        self.data_loaders = data_provider(
+            target=self.target,
+            source=self.source,
+            prediction_len=self.prediction_len,
+            history_len=self.history_len,
+            normalize_dataset=normalize_dataset,
+            source_history_len=source_history_len,
+            last_x_zero=calc_tent,
+            train_size=train_size,
+            val_size=val_size,
+            batch_size=batch_size,
+        )
 
         # set optimizer
         opt_y = torch.optim.Adam(
@@ -224,11 +188,10 @@ class treetModel(nn.Module):
         )
 
         # data data_provider
-        self.data_provider()
         y_min_max = torch.Tensor(
             [
-                min(self.target.min(), self.source.min()),
-                max(self.target.max(), self.source.max()),
+                torch.minimum(self.target.min(), self.source.min()),
+                torch.maximum(self.target.max(), self.source.max()),
             ]
         )
 
@@ -237,11 +200,13 @@ class treetModel(nn.Module):
 
         # training
         val_loss_epoch = []
+        val_y_loss_epoch = []
+        val_yx_loss_epoch = []
         tent_epoch = []
         for _ in tqdm(range(max_epochs), disable=not verbose):
             self.model_state("train")
             with torch.set_grad_enabled(True):
-                for _, (target_b, source_b) in enumerate(self.train_loader):
+                for _, (target_b, source_b) in enumerate(self.data_loaders["train"]):
                     mask = get_mask(
                         target_b.shape[0], sequence_len, sequence_len, self.history_len
                     ).to(self.device)
@@ -259,7 +224,8 @@ class treetModel(nn.Module):
             # validation
             self.model_state("eval")
             with torch.no_grad():
-                for _, (target_b, source_b) in enumerate(self.val_loader):
+                ml, my, myx, mtent = [], [], [], []
+                for _, (target_b, source_b) in enumerate(self.data_loaders["val"]):
                     mask = get_mask(
                         target_b.shape[0], sequence_len, sequence_len, self.history_len
                     ).to(self.device)
@@ -267,13 +233,27 @@ class treetModel(nn.Module):
                     yx, samp_yx = self.model_yx(target_b, y_min_max, mask, x=source_b)
                     loss_y = self.model_DV_loss(y, samp_y)
                     loss_yx = self.model_DV_loss(yx, samp_yx)
-                    loss = (loss_y + loss_yx).mean()
-                    tent = (loss_yx - loss_y).mean()
-                    val_loss_epoch.append(loss.item())
-                    tent_epoch.append(tent.item())
+                    loss = loss_y + loss_yx
+                    tent = loss_y - loss_yx
+                    ml.append(loss.item())
+                    my.append(-loss_y.item())
+                    myx.append(-loss_yx.item())
+                    mtent.append(tent.item())
+
+                val_loss_epoch.append(np.array(ml).mean())
+                val_y_loss_epoch.append(np.array(my).mean())
+                val_yx_loss_epoch.append(np.array(myx).mean())
+                tent_epoch.append(np.array(mtent).mean())
 
         self.val_loss_epoch = np.array(val_loss_epoch)
+        self.val_y_loss_epoch = np.array(val_y_loss_epoch)
+        self.val__yx_loss_epoch = np.array(val_yx_loss_epoch)
         self.tent_epoch = np.array(tent_epoch)
 
     def get_curves(self):
-        return self.val_loss_epoch, self.tent_epoch
+        return (
+            self.val_loss_epoch,
+            self.val_y_loss_epoch,
+            self.val__yx_loss_epoch,
+            self.tent_epoch,
+        )
