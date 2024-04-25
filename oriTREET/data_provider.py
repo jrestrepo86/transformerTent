@@ -84,6 +84,8 @@ class Dataset_Apnea(Dataset):
 
         self.data_x = torch.tensor(np.concatenate([data1[:, :1], data2[:, :1]], axis=0))
         self.data_y = torch.tensor(np.concatenate([data1[:, 1:], data2[:, 1:]], axis=0))
+        self.data_x = self.data_x.float()
+        self.data_y = self.data_y.float()
 
         self.data_stamp = None
 
@@ -101,8 +103,9 @@ class Dataset_Transformer(Dataset):
         r_begin = s_begin
         r_end = s_begin + self.label_len + self.pred_len
 
-        seq_x = self.data_x[r_begin:r_end]  # same input for encoder and decoder
-        seq_y = self.data_y[r_begin:r_end]
+        # same input for encoder and decoder
+        seq_x = self.data_x[r_begin:r_end].clone().detach()
+        seq_y = self.data_y[r_begin:r_end].clone().detach()
 
         if hasattr(self, "last_x_zero"):
             seq_x[-1].zero_()  # for transfer entropy definition without x_t
@@ -145,6 +148,7 @@ def data_provider(args, flag):
         )
         drop_last = True
         batch_size = args["batch_size"]
+        shuffle_flag = False
 
     data_set = Dataset_Transformer_Apnea(
         flag=flag,

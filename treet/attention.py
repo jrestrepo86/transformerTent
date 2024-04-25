@@ -78,7 +78,17 @@ class FixedPastCausalAttention(nn.Module):
         scores_diag = torch.diag_embed(
             scores.diagonal(offset=0, dim1=2, dim2=3), offset=0, dim1=2, dim2=3
         )
-        torch.diagonal(scores, offset=0, dim1=2, dim2=3).zero_()
+        mask_scores = torch.ones_like(scores, dtype=torch.bool)
+        torch.diagonal(mask_scores, offset=0, dim1=2, dim2=3).zero_()
+        mask_scores = torch.logical_not(mask_scores)
+        scores = scores.masked_fill(mask_scores, 0.0)
+
+        # mask_scores = mask_scores + torch.ones_like(scores)
+        # diag = torch.diagonal(scores, offset=0, dim1=2, dim2=3).zero_().squeeze()
+        # mask_t = torch.diag(torch.ones_like(diag))
+        # scores = mask_t * torch.diag(diag) + (1.0 - mask_t) * scores
+
+        # torch.diagonal(scores, offset=0, dim1=2, dim2=3).zero_()
         # attention
         origin_attention = torch.einsum("nhql,nlhd->nqhd", [scores, origin_values])
         samp_attention = torch.einsum("nhql,nlhd->nqhd", [scores_diag, values])

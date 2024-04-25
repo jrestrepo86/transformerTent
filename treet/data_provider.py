@@ -3,7 +3,6 @@ import os
 import numpy as np
 import pandas as pd
 import torch
-import copy
 
 
 def toColVector(x):
@@ -55,13 +54,19 @@ class treet_data_set(Dataset):
         self.history_len = history_len
         self.last_x_zero = last_x_zero
         self.source_history_len = source_history_len
+
+        # data to column vectors
+        target = toColVector(target)
+        source = toColVector(source)
+
         self.data_len = target.shape[0] - prediction_len - history_len + 1
+
         if normalize is not None:
             target = (target - target.mean()) / target.std()
             source = (source - source.mean()) / source.std()
 
-        self.target = target.clone().detach()
-        self.source = source.clone().detach()
+        self.target = torch.Tensor(target).clone().detach().float()
+        self.source = torch.Tensor(source).clone().detach().float()
 
     def __len__(self):
         return self.data_len
@@ -73,7 +78,7 @@ class treet_data_set(Dataset):
         source = self.source[index:sequence_end].clone().detach()
 
         if self.last_x_zero:
-            source[-1].zero_()
+            source[-1].zero_()  # for transfer entropy definition without x_t
         if self.source_history_len is not None:
             if self.source_history_len < self.history_len:
                 source[: -self.source_history_len].zero_()
@@ -89,13 +94,37 @@ def data_provider(
     source_history_len,
     last_x_zero,
     batch_size,
-    train_size,
     val_size,
+    shuffle,
 ):
 
-    dataset = treet_data_set(
-        target,
-        source,
+    # data to column vectors
+    target = toColVector(target)
+    source = toColVector(source)
+
+    # split into data sets
+    n = target.shape[0]
+    val_size = int(n * val_size)
+    val_inds = np.zeros_like(target, dtype=bool)
+    ind_val_start = np.random.randint(0, n - val_size)
+    val_inds[ind_val_start : ind_val_start + val_size] = True
+    val_target_data = target[val_inds]
+    val_source_data = source[val_inds]
+    train_target_data = target[np.logical_not(val_inds)]
+    train_source_data = source[np.logical_not(val_inds)]
+
+    val_dataset = treet_data_set(
+        val_target_data,
+        val_source_data,
+        prediction_len=prediction_len,
+        history_len=history_len,
+        normalize=normalize_dataset,
+        source_history_len=source_history_len,
+        last_x_zero=last_x_zero,
+    )
+    train_dataset = treet_data_set(
+        train_target_data,
+        train_source_data,
         prediction_len=prediction_len,
         history_len=history_len,
         normalize=normalize_dataset,
@@ -103,25 +132,13 @@ def data_provider(
         last_x_zero=last_x_zero,
     )
 
-    n = len(dataset)
-    train_size = int(n * train_size)
-    val_size = int(n * val_size)
-    test_size = n - train_size - val_size
-    train_dataset, valid_dataset, test_dataset = random_split(
-        dataset, (train_size, val_size, test_size)
+    train_data_loader = torch.utils.data.DataLoader(
+        train_dataset, batch_size=batch_size, shuffle=shuffle
     )
-
-    train_dataset_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=batch_size, shuffle=True
-    )
-    valid_dataset_loader = torch.utils.data.DataLoader(
-        valid_dataset, batch_size=batch_size, shuffle=True
-    )
-    test_dataset_loader = torch.utils.data.DataLoader(
-        test_dataset, batch_size=batch_size, shuffle=False
+    valid_data_loader = torch.utils.data.DataLoader(
+        val_dataset, batch_size=batch_size, shuffle=shuffle
     )
     return {
-        "train": train_dataset_loader,
-        "val": valid_dataset_loader,
-        "test": test_dataset_loader,
+        "train": train_data_loader,
+        "val": valid_data_loader,
     }

@@ -9,10 +9,9 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from oriTREET.decoder_model import Model as TREETm
-
-from treet.attention import get_mask
 from treet.treetModel import treetModel
+from testing_parameters import treetModel_parameters
+from treet.data_provider import get_apnea_data
 
 seed = 42
 assert_equal = functools.partial(torch.testing.assert_close, rtol=1e-5, atol=1e-5)
@@ -31,64 +30,33 @@ def run_treet_model(model_params, train_params):
     treet_model = treetModel(**model_params)
     # init_model_weights(treet_model)
 
-    torch.manual_seed(seed)
-    treet_model.eval()
+    target, source = get_apnea_data("heart", "breath")
+    train_params["target_signal"] = target
+    train_params["source_signal"] = source
+    torch.autograd.set_detect_anomaly(True)
     treet_model.fit(**train_params)
-    val, tent = treet_model.get_curves()
-    return val, tent
 
-
-def test_treet_model():
-    # torch.manual_seed(seed)
-    np.random.seed(seed=seed)
-    N = 10000
-    model_dim = 4
-    history_len = 1
-    prediction_len = 3
-    batch_size = 64
-    source = np.random.normal(0, 1, (N, 1))
-    target = np.zeros_like(source)
-    for i in range(1, source.shape[0]):
-        target[i] = source[i - 1] + 0.01 * np.random.normal(0, 1)
-
-    model_params = {
-        "target_signal": target,
-        "source_signal": source,
-        "model_dim": model_dim,
-        "heads": 2,
-        "history_len": history_len,
-        "prediction_len": prediction_len,
-        "attn_dropout": 0.1,
-        "embed_max_len": 5000,
-        "embed_dropout": 0.1,
-        "transf_activation": "relu",
-        "transf_dropout": 0.1,
-        "transf_fordward_expansion": 4,
-        "treet_block_randsamp_draws": 15,
-    }
-
-    train_params = {
-        "batch_size": batch_size,
-        "max_epochs": 80,
-        "lr": 1e-4,
-        "weight_decay": 5e-5,
-        "train_size": 0.8,
-        "val_size": 0.2,
-        "normalize_dataset": None,
-        "calc_tent": True,
-        "source_history_len": None,
-        "verbose": True,
-    }
-
-    # aT, bT = run_TREET_model(parameters, y, y_min_max)
-    # torch.autograd.set_detect_anomaly(True)
-    val, tent = run_treet_model(model_params, train_params)
-    plt.plot(val)
-    plt.plot(tent)
-    plt.show()
-    # assert_equal(a, aT)
-    # assert_equal(b, bT)
+    return treet_model.get_metrics()
 
 
 if __name__ == "__main__":
-    test_treet_model()
+    model_params = treetModel_parameters["model_params"]
+    training_params = treetModel_parameters["train_params"]
+
+    curves = run_treet_model(model_params, training_params)
+
+    fig, axs = plt.subplots(3, 1, sharex=True, sharey=False)
+    axs[0].plot(curves["val"]["y_loss"], "r", label="val")
+    axs[0].plot(curves["train"]["y_loss"], "b", label="train")
+    axs[0].set_title("y loss")
+
+    axs[1].plot(curves["val"]["yx_loss"], "r", label="val")
+    axs[1].plot(curves["train"]["yx_loss"], "b", label="train")
+    axs[1].set_title("xy loss")
+
+    axs[2].plot(curves["val"]["tent"], "r", label="val")
+    axs[2].plot(curves["train"]["tent"], "b", label="train")
+    axs[2].set_title("tent")
+    axs[2].legend(loc="lower right")
+    fig.suptitle("Curves for oriTREET", fontsize=13)
+    plt.show()

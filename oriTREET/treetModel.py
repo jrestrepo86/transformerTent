@@ -50,8 +50,8 @@ class treetModel(nn.Module):
 
         criterion = DV_Loss(self.args["exp_clipping"], self.args["alpha_dv_reg"])
 
-        val_metrics = {"y": [], "yx": [], "tent": []}
-        train_metrics = {"y": [], "yx": [], "tent": []}
+        val_metrics = {"y_loss": [], "yx_loss": [], "tent": []}
+        train_metrics = {"y_loss": [], "yx_loss": [], "tent": []}
         for epoch in range(self.args["train_epochs"]):
             iter_count = 0
 
@@ -79,8 +79,8 @@ class treetModel(nn.Module):
                     loss.backward()
                     opt_y.step()
                     opt_yx.step()
-            train_metrics["y"].append(np.array(tm_y).mean())
-            train_metrics["yx"].append(np.array(tm_yx).mean())
+            train_metrics["y_loss"].append(np.array(tm_y).mean())
+            train_metrics["yx_loss"].append(np.array(tm_yx).mean())
             train_metrics["tent"].append(np.array(tm_yx).mean() - np.array(tm_y).mean())
 
             self.reset_states(mode="eval")
@@ -101,8 +101,8 @@ class treetModel(nn.Module):
                     loss_yx = criterion(outputs_yx[:2])
                     vm_y.append(-loss_y.item())
                     vm_yx.append(-loss_yx.item())
-            val_metrics["y"].append(np.array(vm_y).mean())
-            val_metrics["yx"].append(np.array(vm_yx).mean())
+            val_metrics["y_loss"].append(np.array(vm_y).mean())
+            val_metrics["yx_loss"].append(np.array(vm_yx).mean())
             val_metrics["tent"].append(np.array(tm_yx).mean() - np.array(tm_y).mean())
 
         for k in train_metrics.keys():
@@ -111,59 +111,6 @@ class treetModel(nn.Module):
         self.train_metrics = train_metrics
         self.val_metrics = val_metrics
 
-    def get_curves(self):
-        return self.val_metrics, self.train_metrics
-
-
-if __name__ == "__main__":
-    args = {
-        # "training"
-        # Training related parameters
-        "is_training": 1,  # status
-        "train_epochs": 200,  # train epochs
-        "batch_size": 1024,  # batch size of train input data
-        "patience": 20,  # early stopping patience
-        "learning_rate": 0.0001,  # optimizer learning rate
-        "loss": "dv",  # loss function
-        "lradj": "type1_0.95",  # adjust learning rate
-        "use_amp": False,  # use automatic mixed precision training
-        "optimizer": "adam",  # optimizer name, options: [adam, rmsprop]
-        "n_draws": 15,  # number of draws for DV potential calculation
-        "exp_clipping": "inf",  # exponential clipping for DV potential calculation
-        "alpha_dv_reg": 0.0,  # alpha for DV regularization on C constant
-        "num_workers": 0,  # data loader num workers
-        "itr": 1,  # experiments times
-        "log_interval": 5,  # training log print interval
-        # "model"
-        # /* Model related parameters */
-        "model": "Decoder_Model",  # model name, options: [Transformer_Encoder, LSTM, Autoformer, Informer, Transformer]
-        "seq_len": 0,  # input sequence length
-        "label_len": 5,  # start token length. pre-prediction sequence length for the encoder
-        "pred_len": 30,  # prediction sequence length
-        "y_dim": 1,  # y input size - exogenous values
-        "x_dim": 1,  # x input size - endogenous values
-        "c_out": 1,  # output size
-        "d_model": 16,  # dimension of model
-        "n_heads": 1,  # num of heads
-        "time_layers": 1,  # num of attention layers
-        "ff_layers": 1,  # num of ff layers
-        "d_ff": 32,  # dimension of fcn
-        "factor": 1,  # attn factor (c hyper-parameter)
-        "distil": True,  # whether to use distilling in encoder, using this argument means not using distilling
-        "dropout": 0.0,  # dropout
-        "embed": "fixed",  # time features encoding, options:[timeF, fixed, learned]
-        "activation": "elu",  # activation - must be elu to work with NDG
-        "output_attention": False,  # whether to output attention in encoder
-        # "process_channel"
-        # /* Process and Channel related parameters */
-        "use_ndg": False,  # use NDG instead of previous created dataset.
-        "process_info": {
-            "type": "Apnea",
-            "x": "breath",  # TE(heart->breath) < TE(breath->heart)
-            "x_length": 3,  # -1 means all = label length (the last x is trimmed due to synchronization of the processes)
-            "memory_cut": True,  # reset states of the model, and taking data without stride
-        },
-    }
-
-    m = treetModel(args)
-    m.fit(args)
+    def get_metrics(self):
+        metrics = {"val": self.val_metrics, "train": self.train_metrics}
+        return metrics

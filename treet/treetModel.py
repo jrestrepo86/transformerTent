@@ -67,8 +67,8 @@ class treetBlock(nn.Module):
 class treetModel(nn.Module):
     def __init__(
         self,
-        target_signal,
-        source_signal,
+        target_dim,
+        source_dim,
         model_dim=6,
         heads=3,
         history_len=1,
@@ -92,18 +92,10 @@ class treetModel(nn.Module):
 
         self.prediction_len = prediction_len
         self.history_len = history_len
-        self.target = torch.tensor(toColVector(target_signal), dtype=torch.float).to(
-            self.device
-        )
-        self.source = torch.tensor(toColVector(source_signal), dtype=torch.float).to(
-            self.device
-        )
-        self.target_dim = target_signal.shape[1]
-        self.source_dim = source_signal.shape[1]
 
         # y-model
         self.model_y = treetBlock(
-            input_dim=self.target_dim,
+            input_dim=target_dim,
             model_dim=model_dim,
             heads=heads,
             history_len=history_len,
@@ -119,7 +111,7 @@ class treetModel(nn.Module):
 
         # yx-model
         self.model_yx = treetBlock(
-            input_dim=self.target_dim + self.source_dim,
+            input_dim=target_dim + source_dim,
             model_dim=model_dim,
             heads=heads,
             history_len=history_len,
@@ -154,6 +146,8 @@ class treetModel(nn.Module):
 
     def fit(
         self,
+        target_signal,
+        source_signal,
         batch_size=64,
         max_epochs=2000,
         lr=1e-6,
@@ -166,9 +160,19 @@ class treetModel(nn.Module):
         verbose=False,
     ):
 
+        target = torch.tensor(toColVector(target_signal), dtype=torch.float)
+        source = torch.tensor(toColVector(source_signal), dtype=torch.float)
+        # data data_provider
+        y_min_max = torch.Tensor(
+            [
+                torch.minimum(target.min(), source.min()),
+                torch.maximum(target.max(), source.max()),
+            ]
+        ).detach()
+        # get data loaders {training, validation, testing}
         self.data_loaders = data_provider(
-            target=self.target,
-            source=self.source,
+            target=target,
+            source=source,
             prediction_len=self.prediction_len,
             history_len=self.history_len,
             normalize_dataset=normalize_dataset,
@@ -187,73 +191,92 @@ class treetModel(nn.Module):
             self.model_yx.parameters(), lr=lr, weight_decay=weight_decay
         )
 
-        # data data_provider
-        y_min_max = torch.Tensor(
-            [
-                torch.minimum(self.target.min(), self.source.min()),
-                torch.maximum(self.target.max(), self.source.max()),
-            ]
-        )
-
         # set full fixed attention mask
         sequence_len = self.prediction_len + self.history_len
 
         # training
-        val_loss_epoch = []
-        val_y_loss_epoch = []
-        val_yx_loss_epoch = []
-        tent_epoch = []
+        val_loss_epoch, val_y_loss_epoch, val_yx_loss_epoch = [], [], []
+        train_loss_epoch, train_y_loss_epoch, train_yx_loss_epoch = [], [], []
+        train_tent_epoch, val_tent_epoch = [], []
         for _ in tqdm(range(max_epochs), disable=not verbose):
             self.model_state("train")
             with torch.set_grad_enabled(True):
+                train_l, train_y, train_yx, train_tent = [], [], [], []
                 for _, (target_b, source_b) in enumerate(self.data_loaders["train"]):
-                    mask = get_mask(
-                        target_b.shape[0], sequence_len, sequence_len, self.history_len
-                    ).to(self.device)
                     opt_y.zero_grad()
                     opt_yx.zero_grad()
-                    y, samp_y = self.model_y(target_b, y_min_max, mask, x=None)
-                    yx, samp_yx = self.model_yx(target_b, y_min_max, mask, x=source_b)
-                    loss_y = self.model_DV_loss(y, samp_y)
-                    loss_yx = self.model_DV_loss(yx, samp_yx)
-                    loss = loss_y + loss_yx
-                    loss.backward()
-                    opt_y.step()
-                    opt_yx.step()
-
-            # validation
-            self.model_state("eval")
-            with torch.no_grad():
-                ml, my, myx, mtent = [], [], [], []
-                for _, (target_b, source_b) in enumerate(self.data_loaders["val"]):
                     mask = get_mask(
                         target_b.shape[0], sequence_len, sequence_len, self.history_len
                     ).to(self.device)
+                    target_b = target_b.to(self.device)
+                    source_b = source_b.to(self.device)
                     y, samp_y = self.model_y(target_b, y_min_max, mask, x=None)
                     yx, samp_yx = self.model_yx(target_b, y_min_max, mask, x=source_b)
                     loss_y = self.model_DV_loss(y, samp_y)
                     loss_yx = self.model_DV_loss(yx, samp_yx)
                     loss = loss_y + loss_yx
                     tent = loss_y - loss_yx
-                    ml.append(loss.item())
-                    my.append(-loss_y.item())
-                    myx.append(-loss_yx.item())
-                    mtent.append(tent.item())
+                    loss.backward()
+                    opt_y.step()
+                    opt_yx.step()
+                    train_l.append(loss.item())
+                    train_y.append(-loss_y.item())
+                    train_yx.append(-loss_yx.item())
+                    train_tent.append(tent.item())
+                train_loss_epoch.append(np.array(train_l).mean())
+                train_y_loss_epoch.append(np.array(train_y).mean())
+                train_yx_loss_epoch.append(np.array(train_yx).mean())
+                train_tent_epoch.append(np.array(train_tent).mean())
 
-                val_loss_epoch.append(np.array(ml).mean())
-                val_y_loss_epoch.append(np.array(my).mean())
-                val_yx_loss_epoch.append(np.array(myx).mean())
-                tent_epoch.append(np.array(mtent).mean())
+            # validation
+            self.model_state("eval")
+            with torch.no_grad():
+                val_l, val_y, val_yx, val_tent = [], [], [], []
+                for _, (target_b, source_b) in enumerate(self.data_loaders["val"]):
+                    mask = get_mask(
+                        target_b.shape[0], sequence_len, sequence_len, self.history_len
+                    ).to(self.device)
+                    target_b = target_b.to(self.device)
+                    source_b = source_b.to(self.device)
+                    y, samp_y = self.model_y(target_b, y_min_max, mask, x=None)
+                    yx, samp_yx = self.model_yx(target_b, y_min_max, mask, x=source_b)
+                    loss_y = self.model_DV_loss(y, samp_y)
+                    loss_yx = self.model_DV_loss(yx, samp_yx)
+                    loss = loss_y + loss_yx
+                    tent = loss_y - loss_yx
+                    val_l.append(loss.item())
+                    val_y.append(-loss_y.item())
+                    val_yx.append(-loss_yx.item())
+                    val_tent.append(tent.item())
+
+                val_loss_epoch.append(np.array(val_l).mean())
+                val_y_loss_epoch.append(np.array(val_y).mean())
+                val_yx_loss_epoch.append(np.array(val_yx).mean())
+                val_tent_epoch.append(np.array(val_tent).mean())
 
         self.val_loss_epoch = np.array(val_loss_epoch)
         self.val_y_loss_epoch = np.array(val_y_loss_epoch)
-        self.val__yx_loss_epoch = np.array(val_yx_loss_epoch)
-        self.tent_epoch = np.array(tent_epoch)
+        self.val_yx_loss_epoch = np.array(val_yx_loss_epoch)
+        self.val_tent_epoch = np.array(val_tent_epoch)
 
-    def get_curves(self):
-        return (
-            self.val_loss_epoch,
-            self.val_y_loss_epoch,
-            self.val__yx_loss_epoch,
-            self.tent_epoch,
-        )
+        self.train_loss_epoch = np.array(train_loss_epoch)
+        self.train_y_loss_epoch = np.array(train_y_loss_epoch)
+        self.train_yx_loss_epoch = np.array(train_yx_loss_epoch)
+        self.train_tent_epoch = np.array(train_tent_epoch)
+
+    def get_metrics(self):
+        metrics = {
+            "val": {
+                "loss": self.val_loss_epoch,
+                "y_loss": self.val_y_loss_epoch,
+                "yx_loss": self.val_yx_loss_epoch,
+                "tent": self.val_tent_epoch,
+            },
+            "train": {
+                "loss": self.train_loss_epoch,
+                "y_loss": self.train_y_loss_epoch,
+                "yx_loss": self.train_yx_loss_epoch,
+                "tent": self.train_tent_epoch,
+            },
+        }
+        return metrics
