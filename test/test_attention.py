@@ -68,5 +68,5 @@ def test_attention():
     assert_equal(b, bT)
 
 
-# if __name__ == "__main__":
-#     test_attention()
+if __name__ == "__main__":
+    test_attention()

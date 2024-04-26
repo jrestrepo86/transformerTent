@@ -12,8 +12,8 @@ transf_fordward_expansion = 2  # d_ff =  transf_fordward_expansion * model_dim
 
 # training parameters
 batch_size = 1024
-max_epochs = 4
-lr = 1e-4
+max_epochs = 80
+lr = 1e-5
 treet_block_randsamp_draws = 15
 source_history_len = 3
 
@@ -35,10 +35,9 @@ treetModel_parameters = {
     },
     "train_params": {
         "batch_size": batch_size,
-        "max_epochs": 80,
+        "max_epochs": max_epochs,
         "lr": lr,
         "weight_decay": 5e-5,
-        "train_size": 0.8,
         "val_size": 0.2,
         "normalize_dataset": None,
         "calc_tent": True,

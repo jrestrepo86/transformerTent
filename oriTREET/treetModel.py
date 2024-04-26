@@ -2,6 +2,7 @@ import torch.nn as nn
 import torch
 from torch import optim
 import numpy as np
+from tqdm import tqdm
 
 from .decoder_model import Model
 from .data_provider import data_provider
@@ -52,7 +53,7 @@ class treetModel(nn.Module):
 
         val_metrics = {"y_loss": [], "yx_loss": [], "tent": []}
         train_metrics = {"y_loss": [], "yx_loss": [], "tent": []}
-        for epoch in range(self.args["train_epochs"]):
+        for epoch in tqdm(range(self.args["train_epochs"]), disable=False):
             iter_count = 0
 
             self.reset_states(mode="train")

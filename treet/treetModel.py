@@ -1,6 +1,7 @@
 import math
 
 import numpy as np
+from numpy.random import shuffle
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Subset
@@ -152,7 +153,6 @@ class treetModel(nn.Module):
         max_epochs=2000,
         lr=1e-6,
         weight_decay=5e-5,
-        train_size=0.8,
         val_size=0.2,
         normalize_dataset=None,
         calc_tent=True,
@@ -178,9 +178,9 @@ class treetModel(nn.Module):
             normalize_dataset=normalize_dataset,
             source_history_len=source_history_len,
             last_x_zero=calc_tent,
-            train_size=train_size,
             val_size=val_size,
             batch_size=batch_size,
+            shuffle=True,
         )
 
         # set optimizer
